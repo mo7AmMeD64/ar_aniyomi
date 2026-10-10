@@ -69,8 +69,7 @@ class CinemaBox : Source() {
 
     // =============================== Json ================================
 
-    private fun JsonObject.str(key: String): String? =
-        (this[key] as? JsonPrimitive)?.contentOrNull
+    private fun JsonObject.str(key: String): String? = (this[key] as? JsonPrimitive)?.contentOrNull
 
     private fun JsonObject.obj(key: String): JsonObject? = this[key] as? JsonObject
 
@@ -78,8 +77,7 @@ class CinemaBox : Source() {
 
     private fun JsonArray.objects(): List<JsonObject> = mapNotNull { it as? JsonObject }
 
-    private fun JsonObject.firstNumber(key: String): Int? =
-        str(key)?.let { Regex("\\d+").find(it)?.value?.toIntOrNull() }
+    private fun JsonObject.firstNumber(key: String): Int? = str(key)?.let { Regex("\\d+").find(it)?.value?.toIntOrNull() }
 
     private suspend fun apiGet(path: String): JsonObject? = try {
         client.get("$api/$path".toHttpUrl(), headers).parseAs<JsonObject>()
@@ -91,8 +89,7 @@ class CinemaBox : Source() {
 
     // ============================== Popular ==============================
 
-    override suspend fun getPopularAnime(page: Int): AnimesPage =
-        searchPage(page, "", null)
+    override suspend fun getPopularAnime(page: Int): AnimesPage = searchPage(page, "", null)
 
     // =============================== Search ===============================
 
