@@ -1,3 +1,5 @@
+import io.github.secozzi.gradle.api.ContentWarning
+
 plugins {
     alias(proj.plugins.extension)
 }
@@ -5,4 +7,5 @@ plugins {
 extension {
     name = "CinemaBox"
     versionCode = 1
+    contentWarning = ContentWarning.SAFE
 }
