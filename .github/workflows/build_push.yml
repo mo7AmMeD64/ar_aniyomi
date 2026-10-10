@@ -1,0 +1,107 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build extensions
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: 17
+          distribution: temurin
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: true
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: ''
+
+      - name: Build extensions
+        env:
+          ALIAS: ar_aniyomi
+          KEY_STORE_PASSWORD: ar_aniyomi2026
+          KEY_PASSWORD: ar_aniyomi2026
+        run: |
+          chmod +x gradlew
+          ./gradlew -p src assembleRelease --stacktrace
+
+      - name: Upload APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: individual-apks
+          path: |
+            **/build/outputs/apk/release/*.apk
+            **/build/source-info.json
+          retention-days: 1
+
+  publish:
+    name: Publish repo branch
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Download APKs
+        uses: actions/download-artifact@v4
+        with:
+          name: individual-apks
+          path: apks
+
+      - name: Clone repo branch
+        run: |
+          git clone --depth 1 --branch repo \
+            "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" repo \
+            || {
+              mkdir repo
+              cd repo
+              git init -b repo
+              git config user.name "github-actions"
+              git config user.email "action@github.com"
+              git commit --allow-empty -q -m "init"
+              git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+            }
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update index and APKs
+        run: |
+          cd repo
+          git config user.name "github-actions"
+          git config user.email "action@github.com"
+          python3 "$GITHUB_WORKSPACE/.github/scripts/make_index.py" "$GITHUB_WORKSPACE/apks" . "$GITHUB_WORKSPACE"
+
+      - name: Push repo branch
+        run: |
+          cd repo
+          git add -A
+          if [ -n "$(git status --porcelain)" ]; then
+            git commit -q -m "Update extensions repo"
+            git push origin repo
+          else
+            echo "No changes"
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
