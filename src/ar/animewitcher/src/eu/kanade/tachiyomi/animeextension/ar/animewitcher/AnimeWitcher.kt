@@ -31,10 +31,9 @@ class AnimeWitcher : Source() {
 
     private fun dbg(msg: String) {
         try {
-            java.io.File("/storage/emulated/0/animewitcher_debug.log").let { f ->
-                f.exists() || f.createNewFile()
-                f.appendText(java.time.LocalTime.now().toString() + " " + msg + "\n")
-            }
+            java.io.File(
+                "/storage/emulated/0/Android/data/xyz.jmir.tachiyomi.mi/files/Download/animewitcher_debug.log",
+            ).appendText(java.time.LocalTime.now().toString() + " " + msg + "\n")
         } catch (_: Throwable) {
         }
     }
