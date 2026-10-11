@@ -43,7 +43,13 @@ def main() -> None:
 
         src = apk_by_name.get(apk_name)
         if src is None:
-            print(f"warn: apk not found for {apk_name}", file=sys.stderr)
+            candidates = [
+                p for p in apks
+                if os.path.basename(p).startswith(f"aniyomi-{module}-v{version_name}")
+            ]
+            src = candidates[0] if candidates else None
+        if src is None:
+            print(f"warn: apk not found for {module} v{version_name}", file=sys.stderr)
             continue
         shutil.copyfile(src, os.path.join(repo_dir, "apk", apk_name))
 
