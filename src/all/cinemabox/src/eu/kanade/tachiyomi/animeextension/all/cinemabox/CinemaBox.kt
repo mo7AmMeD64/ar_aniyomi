@@ -93,11 +93,10 @@ class CinemaBox : Source() {
 
     // =============================== Search ===============================
 
+    private class CategoryFilter(values: Array<String>) : AnimeFilter.Select<String>("القسم", values)
+
     override fun getFilterList(): AnimeFilterList = AnimeFilterList(
-        AnimeFilter.Select<String>(
-            "القسم",
-            categories.map { it.second }.toTypedArray(),
-        ),
+        CategoryFilter(categories.map { it.second }.toTypedArray()),
     )
 
     override suspend fun getSearchAnime(
@@ -105,7 +104,7 @@ class CinemaBox : Source() {
         query: String,
         filters: AnimeFilterList,
     ): AnimesPage {
-        val select = filters.firstOrNull() as? AnimeFilter.Select<*>
+        val select = filters.filterIsInstance<CategoryFilter>().firstOrNull()
         val category = categories.getOrNull(select?.state ?: 0)?.first
         return searchPage(page, query, category)
     }
