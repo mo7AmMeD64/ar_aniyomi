@@ -29,15 +29,6 @@ class AnimeWitcher : Source() {
 
     // ============================== Debug ================================
 
-    private fun dbg(msg: String) {
-        try {
-            java.io.File(
-                "/storage/emulated/0/Android/data/xyz.jmir.tachiyomi.mi/files/Download/animewitcher_debug.log",
-            ).appendText(java.time.LocalTime.now().toString() + " " + msg + "\n")
-        } catch (_: Throwable) {
-        }
-    }
-
     // ============================== Settings ==============================
 
     override fun setupPreferenceScreen(screen: PreferenceScreen) = Unit
@@ -65,7 +56,15 @@ class AnimeWitcher : Source() {
 
     // =============================== Json ================================
 
-    private fun JsonObject.str(key: String): String? = (this[key] as? JsonPrimitive)?.contentOrNull?.takeUnless { it.isBlank() }
+    // Handles both Algolia (flat: "key":"value") and Firestore (wrapped: "key":{"stringValue":"value"})
+    private fun JsonObject.str(key: String): String? {
+        val v = this[key] ?: return null
+        return when {
+            v is JsonPrimitive -> v.contentOrNull?.takeUnless { it.isBlank() }
+            v is JsonObject -> (v["stringValue"] as? JsonPrimitive)?.contentOrNull?.takeUnless { it.isBlank() }
+            else -> null
+        }
+    }
 
     private fun JsonObject.obj(key: String): JsonObject? = this[key] as? JsonObject
 
@@ -87,7 +86,6 @@ class AnimeWitcher : Source() {
     }
 
     private suspend fun algoliaQueryInner(index: String, params: String): JsonObject {
-        dbg("algoliaQueryInner: index=$index appId=$algoliaAppId")
         val headers = Headers.headersOf(
             "X-Algolia-Application-Id",
             algoliaAppId,
@@ -109,7 +107,6 @@ class AnimeWitcher : Source() {
         var lastError: Throwable? = null
         for (host in hosts) {
             try {
-                dbg("trying host: $host")
                 val response = client.post(
                     "$host/1/indexes/$index/query",
                     headers,
@@ -117,17 +114,14 @@ class AnimeWitcher : Source() {
                     ensureSuccess = false,
                 )
                 if (!response.isSuccessful) {
-                    dbg("host $host returned HTTP ${response.code}")
                     lastError = IllegalStateException("Algolia HTTP ${response.code}")
                     continue
                 }
                 val parsed = response.parseAs<JsonObject>()
-                dbg("host $host OK, hits=${(parsed["hits"] as? JsonArray)?.size}")
                 return parsed
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
-                dbg("host $host EXCEPTION: ${e.message}")
                 lastError = e
             }
         }
@@ -244,36 +238,25 @@ class AnimeWitcher : Source() {
     // ============================== Episodes ==============================
 
     override suspend fun getEpisodeList(anime: SAnime): List<SEpisode> {
-        dbg("=== getEpisodeList called: url=${anime.url} title=${anime.title}")
         val animeId = anime.url
         val escaped = animeId.replace("\"", "\\\"")
         val animeJson = algoliaQuery("series", "filters=objectID:\"$escaped\"")
             ?.arr("hits")?.mapNotNull { it as? JsonObject }?.firstOrNull()
-        dbg("algolia object query done: found=${animeJson != null}")
         if (animeJson == null) throw Exception("AnimeWitcher: Algolia query failed for \"$animeId\"")
 
         val docRef = animeJson.str("doc_ref") ?: animeJson.str("path") ?: "anime_list/$animeId"
         val cleanPath = docRef.substringAfter("anime_list/").removePrefix("/")
-        dbg("docRef=$docRef cleanPath=$cleanPath")
 
         val summary = firestoreGet("anime_list/${encode(cleanPath)}/episodes_summery/summery")
-        dbg("summary fetched: ${summary != null}")
         val summaryValues = summary
             ?.obj("fields")?.obj("episodes")?.obj("arrayValue")?.arr("values")
-        dbg("summary values: ${summaryValues?.size ?: "NULL"}")
         if (summaryValues == null) throw Exception("AnimeWitcher: episodes_summery failed for \"$cleanPath\"")
-
-        dbg("starting mapNotNull on ${summaryValues.size} values")
         summaryValues.forEachIndexed { i, v ->
-            dbg("ep[$i]: class=${v::class.simpleName} str=${v.toString().take(120)}")
         }
         return summaryValues.mapNotNull { v ->
-            dbg("mapNotNull: processing element")
             val epFields = (v as? JsonObject)?.obj("mapValue")?.obj("fields")
-            dbg("mapNotNull: epFields=${epFields != null}")
             if (epFields == null) return@mapNotNull null
             val docId = epFields.str("doc_id")
-            dbg("mapNotNull: docId=$docId")
             if (docId == null) return@mapNotNull null
             val translated = epFields.obj("title_translated")?.obj("mapValue")?.obj("fields")
             val epName = translated?.str("ar") ?: epFields.str("name") ?: "الحلقة $docId"
