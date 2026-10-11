@@ -1,4 +1,4 @@
-package eu.kanade.tachiyomi.animeextension.all.anime3rb
+package eu.kanade.tachiyomi.animeextension.ar.anime3rb
 
 import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
