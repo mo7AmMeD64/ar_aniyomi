@@ -81,11 +81,10 @@ class Anime3rb : Source() {
     // ============================== Popular ==============================
 
     /** Series cards of "آخر الأنميات المضافة" on the home page. */
-    private fun Document.addedCards(): List<Element> =
-        select("h3:contains(آخر الأنميات المضافة)").firstOrNull()
-            ?.parents()?.getOrNull(2)
-            ?.select(".glide__slide:not(.glide__slide--clone) a[href*=/titles/]")
-            ?: emptyList()
+    private fun Document.addedCards(): List<Element> = select("h3:contains(آخر الأنميات المضافة)").firstOrNull()
+        ?.parents()?.getOrNull(2)
+        ?.select(".glide__slide:not(.glide__slide--clone) a[href*=/titles/]")
+        ?: emptyList()
 
     private fun Element.toSAnime(): SAnime? {
         val href = attr("href")
@@ -213,8 +212,7 @@ class Anime3rb : Source() {
 
     // =============================== Videos ===============================
 
-    override suspend fun getHosterList(episode: SEpisode): List<Hoster> =
-        listOf(Hoster(hosterUrl = episode.url, hosterName = "Anime3rb"))
+    override suspend fun getHosterList(episode: SEpisode): List<Hoster> = listOf(Hoster(hosterUrl = episode.url, hosterName = "Anime3rb"))
 
     override suspend fun getVideoList(hoster: Hoster): List<Video> {
         val episodeUrl = hoster.hosterUrl
