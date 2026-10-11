@@ -86,7 +86,7 @@ class AnimeWitcher : Source() {
             "Content-Type",
             "application/json; charset=UTF-8",
         )
-        val body = buildJsonObject { put("params", params) }.toJsonBody()
+        val body = buildJsonObject { put("params", params) }.toString().toJsonBody()
         val response = client.post(
             "https://$algoliaAppId-dsn.algolia.net/1/indexes/$index/query",
             headers,
