@@ -83,6 +83,17 @@ def main() -> None:
     with open(os.path.join(repo_dir, "index.min.json"), "w", encoding="utf-8") as f:
         json.dump(entries, f, ensure_ascii=False, separators=(",", ":"))
 
+    # Cleanup: keep only the APKs and icons referenced by the fresh index.
+    referenced_apks = {e["apk"] for e in entries}
+    referenced_icons = {f"{e['pkg']}.png" for e in entries}
+    for sub, keep in (("apk", referenced_apks), ("icon", referenced_icons)):
+        folder = os.path.join(repo_dir, sub)
+        if not os.path.isdir(folder):
+            continue
+        for name in os.listdir(folder):
+            if name not in keep:
+                os.remove(os.path.join(folder, name))
+
     # Aniyomi fetches this when the repository is added.
     repo_meta = {
         "meta": {

@@ -191,19 +191,24 @@ class Anime3rb : Source() {
         val doc = getDocument(anime.url) ?: return emptyList()
 
         return doc.select(".video-list a").reversed().mapIndexedNotNull { index, element ->
-            val href = absolute(element.attr("href"))
-            if (href.isBlank()) return@mapIndexedNotNull null
-            val videoData = element.selectFirst(".video-data")
-            val epText = videoData?.child(0)?.text() ?: ""
-            val epName = videoData?.child(1)?.text() ?: ""
-            val epNumber = nonDigits.replace(epText, "").toIntOrNull() ?: (index + 1)
+            runCatching {
+                val href = absolute(element.attr("href"))
+                if (href.isBlank()) return@mapIndexedNotNull null
 
-            SEpisode.create().apply {
-                url = href
-                name = epName.ifBlank { epText }
-                episode_number = epNumber.toFloat()
-                preview_url = element.selectFirst("img")?.attr("src")?.takeIf { it.isNotBlank() }
-            }
+                // The url always ends with the episode number: /episode/{slug}/{number}
+                val dataText = element.selectFirst(".video-data")?.text() ?: ""
+                val epNumber = href.substringAfterLast("/").toIntOrNull()
+                    ?: nonDigits.replace(dataText.substringBefore(" "), "").toIntOrNull()
+                    ?: (index + 1)
+                val titlePart = dataText.replace("الحلقة $epNumber", "").trim()
+
+                SEpisode.create().apply {
+                    url = href
+                    name = if (titlePart.isBlank()) "الحلقة $epNumber" else "الحلقة $epNumber — $titlePart"
+                    episode_number = epNumber.toFloat()
+                    preview_url = element.selectFirst("img")?.attr("src")?.takeIf { it.isNotBlank() }
+                }
+            }.getOrNull()
         }
     }
 
