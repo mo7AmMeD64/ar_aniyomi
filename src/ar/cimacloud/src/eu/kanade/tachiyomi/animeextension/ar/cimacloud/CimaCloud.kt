@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.animeextension.ar.cimacloud
 
 import android.util.Base64
+import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.animesource.model.AnimeFilter
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
 import eu.kanade.tachiyomi.animesource.model.AnimesPage
@@ -34,7 +35,6 @@ import javax.crypto.Cipher
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
-import androidx.preference.PreferenceScreen
 
 class CimaCloud : Source() {
 
