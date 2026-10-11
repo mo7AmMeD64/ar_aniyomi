@@ -258,7 +258,7 @@ class AnimeWitcher : Source() {
         dbg("docRef=$docRef cleanPath=$cleanPath")
 
         val summary = firestoreGet("anime_list/${encode(cleanPath)}/episodes_summery/summery")
-        dbg("summary fetched: ${summary != null}, keys=${summary?.keySet()?.joinToString(",")}")
+        dbg("summary fetched: ${summary != null}")
         val summaryValues = summary
             ?.obj("fields")?.obj("episodes")?.obj("arrayValue")?.arr("values")
         dbg("summary values: ${summaryValues?.size ?: "NULL"}")
