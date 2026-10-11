@@ -153,7 +153,17 @@ class OscarTv : Source() {
             "api/$kind/?page=$page&limit=20&search=${encode(q)}"
         }
         val d = call(path) ?: return AnimesPage(emptyList(), false)
-        val items = d.dataArr().mapNotNull { it.toSAnime(if (kind == "movies") "movie" else if (kind == "anime") "anime" else "serie") }
+        val items = d.dataArr().mapNotNull {
+            it.toSAnime(
+                if (kind == "movies") {
+                    "movie"
+                } else if (kind == "anime") {
+                    "anime"
+                } else {
+                    "serie"
+                },
+            )
+        }
         val totalPages = d.obj("pagination")?.int("total_pages") ?: 1
         return AnimesPage(items, page < totalPages)
     }
@@ -173,8 +183,10 @@ class OscarTv : Source() {
             val sec = home.obj("data")?.arr("sections")?.objects()
                 ?.firstOrNull {
                     it.str("section_type") == sectionType &&
-                        ((it.obj("content_filters")?.int("category_id") == wantCategory) ||
-                            it.str("title_ar") == section.first)
+                        (
+                            (it.obj("content_filters")?.int("category_id") == wantCategory) ||
+                                it.str("title_ar") == section.first
+                            )
                 } ?: return AnimesPage(emptyList(), false)
             val items = sec.arr("items")?.objects()?.mapNotNull { o ->
                 val id = o.int("item_id") ?: o.int("id") ?: return@mapNotNull null
@@ -308,8 +320,7 @@ class OscarTv : Source() {
 
     // =============================== Videos ===============================
 
-    override suspend fun getHosterList(episode: SEpisode): List<Hoster> =
-        listOf(Hoster(hosterUrl = episode.url, hosterName = "Oscar TV"))
+    override suspend fun getHosterList(episode: SEpisode): List<Hoster> = listOf(Hoster(hosterUrl = episode.url, hosterName = "Oscar TV"))
 
     override suspend fun getVideoList(hoster: Hoster): List<Video> {
         val payload = hoster.hosterUrl
