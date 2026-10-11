@@ -145,7 +145,7 @@ class Anime3rb : Source() {
                                     put("query", query)
                                 },
                             )
-                            put("calls", buildJsonArray())
+                            put("calls", buildJsonArray { })
                         },
                     )
                 },
