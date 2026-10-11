@@ -86,9 +86,15 @@ class AnimeWitcher : Source() {
             "Content-Type",
             "application/json; charset=UTF-8",
         )
-        val body = buildJsonObject { put("params", params) }.toString().toJsonBody()
-        return client.post("https://$algoliaAppId-dsn.algolia.net/1/indexes/$index/query", headers, body)
-            .parseAs<JsonObject>()
+        val body = buildJsonObject { put("params", params) }.toJsonBody()
+        val response = client.post(
+            "https://$algoliaAppId-dsn.algolia.net/1/indexes/$index/query",
+            headers,
+            body,
+            ensureSuccess = false,
+        )
+        if (!response.isSuccessful) throw IllegalStateException("Algolia HTTP ${response.code}")
+        return response.parseAs<JsonObject>()
     }
 
     private suspend fun refreshAlgoliaKeys() {
@@ -111,12 +117,19 @@ class AnimeWitcher : Source() {
     private fun firestoreDocUrl(path: String): String = "https://firestore.googleapis.com/v1/projects/$firebaseProject" +
         "/databases/(default)/documents/$path?key=$firebaseApiKey"
 
-    private suspend fun firestoreGet(path: String): JsonObject? = try {
-        client.get(firestoreDocUrl(path), Headers.headersOf()).parseAs<JsonObject>()
-    } catch (e: CancellationException) {
-        throw e
-    } catch (_: Throwable) {
-        null
+    private suspend fun firestoreGet(path: String): JsonObject? {
+        repeat(2) { attempt ->
+            try {
+                val response = client.get(firestoreDocUrl(path), Headers.headersOf(), ensureSuccess = false)
+                if (!response.isSuccessful) throw IllegalStateException("HTTP ${response.code}")
+                return response.parseAs<JsonObject>()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Throwable) {
+                if (attempt == 1) return null
+            }
+        }
+        return null
     }
 
     private fun encode(path: String): String = URLEncoder.encode(path, "utf-8").replace("+", "%20")
@@ -198,14 +211,14 @@ class AnimeWitcher : Source() {
         val escaped = animeId.replace("\"", "\\\"")
         val animeJson = algoliaQuery("series", "filters=objectID:\"$escaped\"")
             ?.arr("hits")?.mapNotNull { it as? JsonObject }?.firstOrNull()
-            ?: return emptyList()
+            ?: throw Exception("AnimeWitcher: Algolia query failed for \"$animeId\"")
 
         val docRef = animeJson.str("doc_ref") ?: animeJson.str("path") ?: "anime_list/$animeId"
         val cleanPath = docRef.substringAfter("anime_list/").removePrefix("/")
 
         val summary = firestoreGet("anime_list/${encode(cleanPath)}/episodes_summery/summery")
             ?.obj("fields")?.obj("episodes")?.obj("arrayValue")?.arr("values")
-            ?: return emptyList()
+            ?: throw Exception("AnimeWitcher: episodes_summery failed for \"$cleanPath\"")
 
         return summary.mapNotNull { v ->
             val epFields = (v as? JsonObject)?.obj("mapValue")?.obj("fields") ?: return@mapNotNull null
