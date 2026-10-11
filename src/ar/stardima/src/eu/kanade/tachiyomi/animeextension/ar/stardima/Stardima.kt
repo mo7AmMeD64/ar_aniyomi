@@ -109,11 +109,9 @@ class Stardima : Source() {
 
     // ============================== Popular ==============================
 
-    override suspend fun getPopularAnime(page: Int): AnimesPage =
-        browse(sections.first().first, page)
+    override suspend fun getPopularAnime(page: Int): AnimesPage = browse(sections.first().first, page)
 
-    override suspend fun getLatestUpdates(page: Int): AnimesPage =
-        browse(sections.last().first, page)
+    override suspend fun getLatestUpdates(page: Int): AnimesPage = browse(sections.last().first, page)
 
     // =============================== Search ===============================
 
@@ -256,8 +254,10 @@ class Stardima : Source() {
                     client.get(
                         "$hw/embed/$hashid/server/$serverId/url".toHttpUrl(),
                         Headers.headersOf(
-                            "User-Agent", ua,
-                            "Accept", "application/json",
+                            "User-Agent",
+                            ua,
+                            "Accept",
+                            "application/json",
                             "Referer", watchUrl,
                             "X-Requested-With", "XMLHttpRequest",
                         ),
