@@ -27,6 +27,19 @@ import java.util.concurrent.ConcurrentHashMap
 
 class AnimeWitcher : Source() {
 
+    // ============================== Debug ================================
+
+    private fun dbg(msg: String) {
+        try {
+            java.io.File("/storage/emulated/0/animewitcher_debug.log").let { f ->
+                f.exists() || f.createNewFile()
+                f.appendText(java.time.LocalTime.now().toString() + " " + msg + "\n")
+            }
+        } catch (_: Throwable) {
+        }
+    }
+
+
     // ============================== Settings ==============================
 
     override fun setupPreferenceScreen(screen: PreferenceScreen) = Unit
@@ -76,6 +89,7 @@ class AnimeWitcher : Source() {
     }
 
     private suspend fun algoliaQueryInner(index: String, params: String): JsonObject {
+        dbg("algoliaQueryInner: index=$index appId=$algoliaAppId")
         val headers = Headers.headersOf(
             "X-Algolia-Application-Id",
             algoliaAppId,
@@ -97,6 +111,7 @@ class AnimeWitcher : Source() {
         var lastError: Throwable? = null
         for (host in hosts) {
             try {
+                dbg("trying host: $host")
                 val response = client.post(
                     "$host/1/indexes/$index/query",
                     headers,
@@ -104,13 +119,17 @@ class AnimeWitcher : Source() {
                     ensureSuccess = false,
                 )
                 if (!response.isSuccessful) {
+                    dbg("host $host returned HTTP ${response.code}")
                     lastError = IllegalStateException("Algolia HTTP ${response.code}")
                     continue
                 }
-                return response.parseAs<JsonObject>()
+                val parsed = response.parseAs<JsonObject>()
+                dbg("host $host OK, hits=${(parsed["hits"] as? JsonArray)?.size}")
+                return parsed
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
+                dbg("host $host EXCEPTION: ${e.message}")
                 lastError = e
             }
         }
@@ -227,22 +246,29 @@ class AnimeWitcher : Source() {
     // ============================== Episodes ==============================
 
     override suspend fun getEpisodeList(anime: SAnime): List<SEpisode> {
+        dbg("=== getEpisodeList called: url=${anime.url} title=${anime.title}")
         val animeId = anime.url
         val escaped = animeId.replace("\"", "\\\"")
         val animeJson = algoliaQuery("series", "filters=objectID:\"$escaped\"")
             ?.arr("hits")?.mapNotNull { it as? JsonObject }?.firstOrNull()
-            ?: throw Exception("AnimeWitcher: Algolia query failed for \"$animeId\"")
+        dbg("algolia object query done: found=${animeJson != null}")
+        if (animeJson == null) throw Exception("AnimeWitcher: Algolia query failed for \"$animeId\"")
 
         val docRef = animeJson.str("doc_ref") ?: animeJson.str("path") ?: "anime_list/$animeId"
         val cleanPath = docRef.substringAfter("anime_list/").removePrefix("/")
+        dbg("docRef=$docRef cleanPath=$cleanPath")
 
         val summary = firestoreGet("anime_list/${encode(cleanPath)}/episodes_summery/summery")
+        dbg("summary fetched: ${summary != null}, keys=${summary?.keySet()?.joinToString(",")}")
+        val summaryValues = summary
             ?.obj("fields")?.obj("episodes")?.obj("arrayValue")?.arr("values")
-            ?: throw Exception("AnimeWitcher: episodes_summery failed for \"$cleanPath\"")
+        dbg("summary values: ${summaryValues?.size ?: "NULL"}")
+        if (summaryValues == null) throw Exception("AnimeWitcher: episodes_summery failed for \"$cleanPath\"")
 
-        return summary.mapNotNull { v ->
+        return summaryValues.mapNotNull { v ->
             val epFields = (v as? JsonObject)?.obj("mapValue")?.obj("fields") ?: return@mapNotNull null
             val docId = epFields.str("doc_id") ?: return@mapNotNull null
+            dbg("episode: docId=$docId")
             val translated = epFields.obj("title_translated")?.obj("mapValue")?.obj("fields")
             val epName = translated?.str("ar") ?: epFields.str("name") ?: "الحلقة $docId"
             val numberField = epFields.obj("number")
