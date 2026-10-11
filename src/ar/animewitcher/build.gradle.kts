@@ -6,6 +6,6 @@ plugins {
 
 extension {
     name = "AnimeWitcher"
-    versionCode = 5
+    versionCode = 6
     contentWarning = ContentWarning.SAFE
 }

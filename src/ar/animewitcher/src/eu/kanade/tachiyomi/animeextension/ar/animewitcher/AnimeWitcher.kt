@@ -263,10 +263,18 @@ class AnimeWitcher : Source() {
         dbg("summary values: ${summaryValues?.size ?: "NULL"}")
         if (summaryValues == null) throw Exception("AnimeWitcher: episodes_summery failed for \"$cleanPath\"")
 
+        dbg("starting mapNotNull on ${summaryValues.size} values")
+        summaryValues.forEachIndexed { i, v ->
+            dbg("ep[$i]: class=${v::class.simpleName} str=${v.toString().take(120)}")
+        }
         return summaryValues.mapNotNull { v ->
-            val epFields = (v as? JsonObject)?.obj("mapValue")?.obj("fields") ?: return@mapNotNull null
-            val docId = epFields.str("doc_id") ?: return@mapNotNull null
-            dbg("episode: docId=$docId")
+            dbg("mapNotNull: processing element")
+            val epFields = (v as? JsonObject)?.obj("mapValue")?.obj("fields")
+            dbg("mapNotNull: epFields=${epFields != null}")
+            if (epFields == null) return@mapNotNull null
+            val docId = epFields.str("doc_id")
+            dbg("mapNotNull: docId=$docId")
+            if (docId == null) return@mapNotNull null
             val translated = epFields.obj("title_translated")?.obj("mapValue")?.obj("fields")
             val epName = translated?.str("ar") ?: epFields.str("name") ?: "الحلقة $docId"
             val numberField = epFields.obj("number")
