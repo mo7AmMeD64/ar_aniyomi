@@ -192,11 +192,10 @@ class CimaCloud : Source() {
             Base64.encodeToString(ciphertext, Base64.NO_WRAP)
     }
 
-    private fun makeCloudflareId(): String =
-        buildString {
-            repeat(15) { append("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"[secureRandom.nextInt(62)]) }
-            append(deviceId)
-        }
+    private fun makeCloudflareId(): String = buildString {
+        repeat(15) { append("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"[secureRandom.nextInt(62)]) }
+        append(deviceId)
+    }
 
     private fun decryptServers(b64Body: String): List<String>? = try {
         val ciphertext = Base64.decode(b64Body.trim(), Base64.DEFAULT)
@@ -288,11 +287,9 @@ class CimaCloud : Source() {
 
     // ============================== Popular ==============================
 
-    override suspend fun getPopularAnime(page: Int): AnimesPage =
-        browse(sections[1], page)
+    override suspend fun getPopularAnime(page: Int): AnimesPage = browse(sections[1], page)
 
-    override suspend fun getLatestUpdates(page: Int): AnimesPage =
-        browse(sections[0], page)
+    override suspend fun getLatestUpdates(page: Int): AnimesPage = browse(sections[0], page)
 
     // =============================== Search ===============================
 
