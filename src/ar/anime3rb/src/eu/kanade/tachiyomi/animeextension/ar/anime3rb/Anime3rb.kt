@@ -81,15 +81,13 @@ class Anime3rb : Source() {
     // ============================== Popular ==============================
 
     /** Series cards of "آخر الأنميات المضافة" on the home page. */
-    private fun Document.addedCards(): List<Element> = select("h3:contains(آخر الأنميات المضافة)").firstOrNull()
-        ?.parents()?.getOrNull(2)
-        ?.select(".glide__slide:not(.glide__slide--clone) a[href*=/titles/]")
-        ?: emptyList()
+    private fun Document.addedCards(): List<Element> = select("li.glide__slide a[href*='/titles/']")
+
 
     private fun Element.toSAnime(): SAnime? {
         val href = attr("href")
         if (href.isBlank()) return null
-        val title = cleanTitle(select("h3.title-name, h4").firstOrNull()?.text() ?: "")
+        val title = cleanTitle(selectFirst("h2.title-name, h3.title-name, h4")?.text() ?: "")
         if (title.isBlank()) return null
         return SAnime.create().apply {
             url = absolute(href)
