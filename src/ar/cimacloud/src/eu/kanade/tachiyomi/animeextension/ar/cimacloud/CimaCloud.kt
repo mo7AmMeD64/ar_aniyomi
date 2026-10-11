@@ -149,8 +149,7 @@ class CimaCloud : Source() {
 
     private fun JsonObject.obj(key: String): JsonObject? = this[key] as? JsonObject
 
-    private fun JsonObject.arr(key: String): List<JsonObject> =
-        ((this[key] as? JsonArray)?.mapNotNull { it as? JsonObject }) ?: emptyList()
+    private fun JsonObject.arr(key: String): List<JsonObject> = ((this[key] as? JsonArray)?.mapNotNull { it as? JsonObject }) ?: emptyList()
 
     private fun JsonObject.tags(): String? = arr("genres")
         .mapNotNull { it.str("name")?.trim()?.takeIf { s -> s.isNotEmpty() } }
@@ -159,15 +158,18 @@ class CimaCloud : Source() {
 
     private fun JsonObject.cats(): List<Int> = arr("categories").mapNotNull { it.int("id") }
 
-    private fun hostOf(url: String): String? = try { URI(url).host?.lowercase() } catch (_: Throwable) { null }
+    private fun hostOf(url: String): String? = try {
+        URI(url).host?.lowercase()
+    } catch (_: Throwable) {
+        null
+    }
 
     private fun encode(s: String): String = java.net.URLEncoder.encode(s, "UTF-8")
 
     // =============================== Crypto ================================
 
-    private fun md5Hex(text: String): String =
-        MessageDigest.getInstance("MD5").digest(text.toByteArray(Charsets.UTF_8))
-            .joinToString("") { "%02x".format(it) }
+    private fun md5Hex(text: String): String = MessageDigest.getInstance("MD5").digest(text.toByteArray(Charsets.UTF_8))
+        .joinToString("") { "%02x".format(it) }
 
     private fun makeFirebaseId(): String {
         val payload = "{\"a\":\"$attestAppId\",\"b\":\"$attestCertPath\"," +
