@@ -83,6 +83,18 @@ def main() -> None:
     with open(os.path.join(repo_dir, "index.min.json"), "w", encoding="utf-8") as f:
         json.dump(entries, f, ensure_ascii=False, separators=(",", ":"))
 
+    # Aniyomi fetches this when the repository is added.
+    repo_meta = {
+        "meta": {
+            "name": "mo7AmMeD64 Aniyomi",
+            "shortName": "AR",
+            "website": "https://github.com/mo7AmMeD64/ar_aniyomi",
+            "signingKeyFingerprint": "352acef809093a7fbbe1210e4bb557f3337a3dcb581d8cd6cf1e7cd4303c181a",
+        },
+    }
+    with open(os.path.join(repo_dir, "repo.json"), "w", encoding="utf-8") as f:
+        json.dump(repo_meta, f, ensure_ascii=False, separators=(",", ":"))
+
     print(f"index.min.json: {len(entries)} extension(s)")
 
 
