@@ -39,7 +39,6 @@ class AnimeWitcher : Source() {
         }
     }
 
-
     // ============================== Settings ==============================
 
     override fun setupPreferenceScreen(screen: PreferenceScreen) = Unit
