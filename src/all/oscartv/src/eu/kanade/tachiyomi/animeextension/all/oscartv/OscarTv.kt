@@ -10,6 +10,7 @@ import eu.kanade.tachiyomi.animesource.model.SEpisode
 import eu.kanade.tachiyomi.animesource.model.Video
 import extensions.utils.Source
 import extensions.utils.get
+import extensions.utils.parallelMap
 import extensions.utils.parseAs
 import extensions.utils.post
 import kotlinx.coroutines.CancellationException
@@ -121,7 +122,24 @@ class OscarTv : Source() {
 
     // ============================== Popular ==============================
 
-    override suspend fun getPopularAnime(page: Int): AnimesPage = sectionPage(sections.first(), page)
+    /** Popular = a merged movies/series/anime catalog page. */
+    override suspend fun getPopularAnime(page: Int): AnimesPage = allKindsPage(page)
+
+    private suspend fun allKindsPage(page: Int, search: String = ""): AnimesPage {
+        val q = if (search.isBlank()) "" else "&search=${encode(search)}"
+        val kinds = listOf(
+            "api/movies/?page=$page&limit=20$q" to "movie",
+            "api/series/?page=$page&limit=20$q" to "serie",
+            "api/anime/?page=$page&limit=20&anime_type=tv,ova,ona,special,movie$q" to "anime",
+        )
+        val results = kinds.parallelMap { (path, kind) ->
+            val d = call(path)
+            val items = d?.dataArr()?.mapNotNull { it.toSAnime(kind) } ?: emptyList()
+            val totalPages = d?.obj("pagination")?.int("total_pages") ?: 1
+            items to totalPages
+        }
+        return AnimesPage(results.flatMap { it.first }, results.any { page < it.second })
+    }
 
     // =============================== Search ===============================
 
@@ -132,40 +150,15 @@ class OscarTv : Source() {
     )
 
     override suspend fun getSearchAnime(page: Int, query: String, filters: AnimeFilterList): AnimesPage {
-        val select = filters.filterIsInstance<SectionFilter>().firstOrNull()
-        val section = sections.getOrNull(select?.state ?: 0) ?: sections.first()
         val q = query.trim()
-        if (q.isEmpty()) return sectionPage(section, page)
+        if (q.isEmpty()) {
+            // Browsing: the section filter decides what to list.
+            val select = filters.filterIsInstance<SectionFilter>().firstOrNull()
+            return sectionPage(sections.getOrNull(select?.state ?: 0) ?: sections.first(), page)
+        }
 
-        // Search hits every kind's list endpoint.
-        val key = section.first
-        val kind = when {
-            key.contains("مسلسلات") || key.contains("إضافات") -> "series"
-            key.contains("أنمي") -> "anime"
-            key.contains("قنوات") -> "channels"
-            else -> "movies"
-        }
-        if (kind == "channels") return AnimesPage(emptyList(), false)
-
-        val path = if (kind == "anime") {
-            "api/anime/?page=$page&limit=20&anime_type=tv,ova,ona,special,movie&search=${encode(q)}"
-        } else {
-            "api/$kind/?page=$page&limit=20&search=${encode(q)}"
-        }
-        val d = call(path) ?: return AnimesPage(emptyList(), false)
-        val items = d.dataArr().mapNotNull {
-            it.toSAnime(
-                if (kind == "movies") {
-                    "movie"
-                } else if (kind == "anime") {
-                    "anime"
-                } else {
-                    "serie"
-                },
-            )
-        }
-        val totalPages = d.obj("pagination")?.int("total_pages") ?: 1
-        return AnimesPage(items, page < totalPages)
+        // Searching: hit every kind in parallel — the filter only applies to browsing.
+        return allKindsPage(page, q)
     }
 
     private fun encode(s: String): String = java.net.URLEncoder.encode(s, "UTF-8")
