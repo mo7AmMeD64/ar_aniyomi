@@ -258,8 +258,10 @@ class Stardima : Source() {
                             ua,
                             "Accept",
                             "application/json",
-                            "Referer", watchUrl,
-                            "X-Requested-With", "XMLHttpRequest",
+                            "Referer",
+                            watchUrl,
+                            "X-Requested-With",
+                            "XMLHttpRequest",
                         ),
                     ).parseAs<JsonObject>().str("watch_url")
                 } catch (_: Throwable) {
@@ -319,8 +321,10 @@ class Stardima : Source() {
                         videoUrl = videoUrl,
                         videoTitle = hoster.hosterName,
                         headers = Headers.headersOf(
-                            "User-Agent", "Mozilla/5.0",
-                            "Referer", url.substringBefore("/e/"),
+                            "User-Agent",
+                            "Mozilla/5.0",
+                            "Referer",
+                            url.substringBefore("/e/"),
                         ),
                     ),
                 )
