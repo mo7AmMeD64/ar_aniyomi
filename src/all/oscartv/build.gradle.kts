@@ -7,6 +7,6 @@ plugins {
 extension {
     name = "Oscar TV"
     qname = "OscarTv"
-    versionCode = 3
+    versionCode = 4
     contentWarning = ContentWarning.SAFE
 }

@@ -104,9 +104,9 @@ class ExtensionPlugin : Plugin<Project> {
         val versionNameProvider = versionCodeProvider.map { "$extensionLib.$it" }
         val torrentProvider = extension.torrent.orElse(false)
 
-        val androidVersionCodeProvider = versionCodeProvider.map { versionCode ->
-            extensionLib.toInt().times(1000) + versionCode
-        }
+        // Official Aniyomi APKs carry the extension versionCode directly — the app
+        // compares it with `code` in index.min.json to detect updates.
+        val androidVersionCodeProvider = versionCodeProvider
 
         val manifestTask = tasks.register<GenerateManifestTask>("generateExtensionManifest") {
             this.extensionName.set(extension.name)
