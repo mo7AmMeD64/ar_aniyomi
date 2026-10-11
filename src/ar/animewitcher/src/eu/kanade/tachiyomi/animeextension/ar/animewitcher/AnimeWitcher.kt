@@ -108,8 +108,9 @@ class AnimeWitcher : Source() {
         }
     }
 
-    private fun firestoreDocUrl(path: String): String = "https://firestore.googleapis.com/v1/projects/$firebaseProject/databases/(default)/documents/" +
-        "$path?key=$firebaseApiKey"
+    private fun firestoreDocUrl(path: String): String =
+        "https://firestore.googleapis.com/v1/projects/$firebaseProject" +
+            "/databases/(default)/documents/$path?key=$firebaseApiKey"
 
     private suspend fun firestoreGet(path: String): JsonObject? = try {
         client.get(firestoreDocUrl(path), Headers.headersOf()).parseAs<JsonObject>()
@@ -293,7 +294,7 @@ class AnimeWitcher : Source() {
         val w1 = words?.str("word1")
         val w2 = words?.str("word2")
 
-        fun pageBody(url: String): String = try {
+        suspend fun pageBody(url: String): String = try {
             client.get(url.toHttpUrl(), Headers.headersOf("User-Agent", "Mozilla/5.0")).body.string()
         } catch (_: Throwable) {
             ""
