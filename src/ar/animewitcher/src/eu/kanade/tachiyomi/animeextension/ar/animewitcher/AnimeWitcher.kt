@@ -87,14 +87,34 @@ class AnimeWitcher : Source() {
             "application/json; charset=UTF-8",
         )
         val body = buildJsonObject { put("params", params) }.toString().toJsonBody()
-        val response = client.post(
-            "https://$algoliaAppId-dsn.algolia.net/1/indexes/$index/query",
-            headers,
-            body,
-            ensureSuccess = false,
+
+        // Same fallback chain as the official Algolia SDK: dsn -> direct -> dhn.
+        val hosts = listOf(
+            "https://$algoliaAppId-dsn.algolia.net",
+            "https://$algoliaAppId.algolia.net",
+            "https://$algoliaAppId-dhn.algolia.net",
         )
-        if (!response.isSuccessful) throw IllegalStateException("Algolia HTTP ${response.code}")
-        return response.parseAs<JsonObject>()
+        var lastError: Throwable? = null
+        for (host in hosts) {
+            try {
+                val response = client.post(
+                    "$host/1/indexes/$index/query",
+                    headers,
+                    body,
+                    ensureSuccess = false,
+                )
+                if (!response.isSuccessful) {
+                    lastError = IllegalStateException("Algolia HTTP ${response.code}")
+                    continue
+                }
+                return response.parseAs<JsonObject>()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                lastError = e
+            }
+        }
+        throw lastError ?: IllegalStateException("Algolia unreachable")
     }
 
     private suspend fun refreshAlgoliaKeys() {
