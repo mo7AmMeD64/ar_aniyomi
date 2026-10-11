@@ -54,8 +54,7 @@ class AnimeWitcher : Source() {
 
     // =============================== Json ================================
 
-    private fun JsonObject.str(key: String): String? =
-        (this[key] as? JsonPrimitive)?.contentOrNull?.takeUnless { it.isBlank() }
+    private fun JsonObject.str(key: String): String? = (this[key] as? JsonPrimitive)?.contentOrNull?.takeUnless { it.isBlank() }
 
     private fun JsonObject.obj(key: String): JsonObject? = this[key] as? JsonObject
 
@@ -78,10 +77,14 @@ class AnimeWitcher : Source() {
 
     private suspend fun algoliaQueryInner(index: String, params: String): JsonObject {
         val headers = Headers.headersOf(
-            "X-Algolia-Application-Id", algoliaAppId,
-            "X-Algolia-API-Key", algoliaApiKey,
-            "User-Agent", "Algolia for Android (3.27.0); Android (16)",
-            "Content-Type", "application/json; charset=UTF-8",
+            "X-Algolia-Application-Id",
+            algoliaAppId,
+            "X-Algolia-API-Key",
+            algoliaApiKey,
+            "User-Agent",
+            "Algolia for Android (3.27.0); Android (16)",
+            "Content-Type",
+            "application/json; charset=UTF-8",
         )
         val body = buildJsonObject { put("params", params) }.toString().toJsonBody()
         return client.post("https://$algoliaAppId-dsn.algolia.net/1/indexes/$index/query", headers, body)
