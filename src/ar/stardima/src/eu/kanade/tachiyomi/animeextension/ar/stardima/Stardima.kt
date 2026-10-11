@@ -53,9 +53,12 @@ class Stardima : Source() {
     )
 
     private val apiHeaders get() = Headers.headersOf(
-        "x-api-key", apiKey,
-        "User-Agent", ua,
-        "Accept", "application/json",
+        "x-api-key",
+        apiKey,
+        "User-Agent",
+        ua,
+        "Accept",
+        "application/json",
     )
 
     // =============================== Json ================================
@@ -73,8 +76,7 @@ class Stardima : Source() {
 
     private fun JsonObject.obj(key: String): JsonObject? = this[key] as? JsonObject
 
-    private fun JsonObject.arr(key: String): List<JsonObject> =
-        ((this[key] as? JsonArray)?.mapNotNull { it as? JsonObject }) ?: emptyList()
+    private fun JsonObject.arr(key: String): List<JsonObject> = ((this[key] as? JsonArray)?.mapNotNull { it as? JsonObject }) ?: emptyList()
 
     private suspend fun apiGet(path: String, params: Map<String, String> = emptyMap()): JsonObject? = try {
         val url = buildString {
