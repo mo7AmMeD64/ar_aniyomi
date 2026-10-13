@@ -11,7 +11,7 @@ extension {
 }
 
 dependencies {
-    implementation("org.jsoup:jsoup:1.18.3")
+    implementation("org.jsoup:jsoup:1.17.1")
 }
 
 android {
