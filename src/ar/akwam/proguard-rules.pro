@@ -1,0 +1,2 @@
+-dontwarn org.jspecify.annotations.**
+-keep class org.jsoup.** { *; }
