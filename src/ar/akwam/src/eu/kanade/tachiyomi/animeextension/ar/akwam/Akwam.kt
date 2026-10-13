@@ -52,7 +52,7 @@ class Akwam : Source() {
     private fun Element.poster(): String? {
         val imgs = select("img")
         if (imgs.isEmpty()) return null
-        val el = imgs.first()
+        val el = imgs[0]
         val dataSrc = el.attr("data-src")
         val rawSrc = el.attr("src")
         val src = if (dataSrc.isNotBlank()) dataSrc else rawSrc
