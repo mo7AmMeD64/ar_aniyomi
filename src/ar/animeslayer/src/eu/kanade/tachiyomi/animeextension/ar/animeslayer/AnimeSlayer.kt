@@ -67,8 +67,7 @@ class AnimeSlayer : Source() {
 
     private fun JsonObject.obj(key: String): JsonObject? = this[key] as? JsonObject
 
-    private fun JsonObject.arr(key: String): List<JsonObject> =
-        ((this[key] as? JsonArray)?.mapNotNull { it as? JsonObject }) ?: emptyList()
+    private fun JsonObject.arr(key: String): List<JsonObject> = ((this[key] as? JsonArray)?.mapNotNull { it as? JsonObject }) ?: emptyList()
 
     private fun encode(s: String): String = URLEncoder.encode(s, "UTF-8")
 
