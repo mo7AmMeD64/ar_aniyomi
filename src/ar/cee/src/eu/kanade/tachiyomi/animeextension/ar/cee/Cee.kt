@@ -101,7 +101,10 @@ class Cee : Source() {
 
     // ============================== Popular ==============================
 
-    override suspend fun getPopularAnime(page: Int): AnimesPage = browse("video/V/2?videoKind=1&itemsPerPage=30&pageNumber=${(page - 1).coerceAtLeast(0)}&sortParam=desc", page)
+    override suspend fun getPopularAnime(page: Int): AnimesPage {
+        val zeroPage = (page - 1).coerceAtLeast(0)
+        return browse("video/V/2?videoKind=1&itemsPerPage=30&pageNumber=$zeroPage&sortParam=desc")
+    }
 
     override suspend fun getLatestUpdates(page: Int): AnimesPage = browse("newlyVideosItems/level/0/offset/12/page/$page", page)
 
@@ -114,7 +117,9 @@ class Cee : Source() {
         val zeroPage = (page - 1).coerceAtLeast(0)
         val year = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
         val items = apiArr(
-            "AdvancedSearch?level=0&videoTitle=${encode(q)}&staffTitle=${encode(q)}&year=1900,$year&page=$zeroPage&type=all&itemsPerPage=30",
+            "AdvancedSearch?level=0&videoTitle=${encode(q)}" +
+                "&staffTitle=${encode(q)}&year=1900,$year" +
+                "&page=$zeroPage&type=all&itemsPerPage=30",
         ).mapNotNull { it.toSAnime() }
         return AnimesPage(items, items.size >= 30)
     }
@@ -131,7 +136,7 @@ class Cee : Source() {
             ?: throw Exception("Cee: not found")
 
         return anime.apply {
-            title = j.str("en_title") ?: str("ar_title") ?: title
+            title = j.str("en_title") ?: j.str("ar_title") ?: title
             description = j.str("ar_content") ?: j.str("en_content")
             genre = (j["categories"] as? JsonArray)
                 ?.mapNotNull { c ->
