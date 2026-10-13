@@ -106,7 +106,7 @@ class Cee : Source() {
         return browse("video/V/2?videoKind=1&itemsPerPage=30&pageNumber=$zeroPage&sortParam=desc")
     }
 
-    override suspend fun getLatestUpdates(page: Int): AnimesPage = browse("newlyVideosItems/level/0/offset/12/page/$page", page)
+    override suspend fun getLatestUpdates(page: Int): AnimesPage = browse("newlyVideosItems/level/0/offset/12/page/$page")
 
     // =============================== Search ===============================
 
@@ -124,7 +124,7 @@ class Cee : Source() {
         return AnimesPage(items, items.size >= 30)
     }
 
-    private suspend fun browse(path: String, page: Int): AnimesPage {
+    private suspend fun browse(path: String): AnimesPage {
         val items = apiArr(path).mapNotNull { it.toSAnime() }
         return AnimesPage(items, items.size >= 24)
     }
