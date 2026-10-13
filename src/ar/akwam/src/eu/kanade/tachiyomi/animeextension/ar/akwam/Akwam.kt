@@ -49,8 +49,13 @@ class Akwam : Source() {
 
     // =============================== Cards ================================
 
-    private fun Element.poster(): String? = selectFirst("img")?.let { it.attr("data-src").ifBlank { it.attr("src") } }
-        ?.takeIf { it.startsWith("http") }
+    private fun Element.poster(): String? {
+        val imgs = select("img")
+        if (imgs.isEmpty()) return null
+        val el = imgs.first()
+        val src = el.attr("data-src").ifBlank { el.attr("src") }
+        return src.takeIf { it.startsWith("http") }
+    }
 
     private fun Element.toSAnime(): SAnime? {
         val a = selectFirst("h3.entry-title a") ?: return null
@@ -105,9 +110,7 @@ class Akwam : Source() {
                 .filter { it.isNotBlank() }
                 .joinToString(", ")
                 .takeIf { it.isNotBlank() }
-            thumbnail_url = doc.selectFirst("img")?.let {
-                it.attr("data-src").ifBlank { it.attr("src") }
-            }?.takeIf { it.startsWith("http") } ?: thumbnail_url
+            thumbnail_url = doc.poster() ?: thumbnail_url
             status = SAnime.UNKNOWN
         }
     }
