@@ -49,9 +49,8 @@ class Akwam : Source() {
 
     // =============================== Cards ================================
 
-    private fun Element.poster(): String? =
-        selectFirst("img")?.let { it.attr("data-src").ifBlank { it.attr("src") } }
-            ?.takeIf { it.startsWith("http") }
+    private fun Element.poster(): String? = selectFirst("img")?.let { it.attr("data-src").ifBlank { it.attr("src") } }
+        ?.takeIf { it.startsWith("http") }
 
     private fun Element.toSAnime(): SAnime? {
         val a = selectFirst("h3.entry-title a") ?: return null
@@ -64,16 +63,13 @@ class Akwam : Source() {
         }
     }
 
-    private fun Document.cards(): List<SAnime> =
-        select("div.col-lg-auto.col-md-4.col-6").mapNotNull { it.toSAnime() }
+    private fun Document.cards(): List<SAnime> = select("div.col-lg-auto.col-md-4.col-6").mapNotNull { it.toSAnime() }
 
     // ============================== Popular ==============================
 
-    override suspend fun getPopularAnime(page: Int): AnimesPage =
-        browse("movies", page)
+    override suspend fun getPopularAnime(page: Int): AnimesPage = browse("movies", page)
 
-    override suspend fun getLatestUpdates(page: Int): AnimesPage =
-        browse("series", page)
+    override suspend fun getLatestUpdates(page: Int): AnimesPage = browse("series", page)
 
     // =============================== Search ===============================
 
