@@ -53,8 +53,10 @@ class Akwam : Source() {
         val imgs = select("img")
         if (imgs.isEmpty()) return null
         val el = imgs.first()
-        val src = el.attr("data-src").ifBlank { el.attr("src") }
-        return src.takeIf { it.startsWith("http") }
+        val dataSrc = el.attr("data-src")
+        val rawSrc = el.attr("src")
+        val src = if (dataSrc.isNotBlank()) dataSrc else rawSrc
+        return if (src.startsWith("http")) src else null
     }
 
     private fun Element.toSAnime(): SAnime? {
