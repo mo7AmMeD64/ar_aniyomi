@@ -156,8 +156,7 @@ class Akwam : Source() {
 
     // =============================== Videos ===============================
 
-    override suspend fun getHosterList(episode: SEpisode): List<Hoster> =
-        listOf(Hoster(hosterUrl = episode.url, hosterName = "Akwam"))
+    override suspend fun getHosterList(episode: SEpisode): List<Hoster> = listOf(Hoster(hosterUrl = episode.url, hosterName = "Akwam"))
 
     override suspend fun getVideoList(hoster: Hoster): List<Video> {
         val episodeUrl = hoster.hosterUrl
