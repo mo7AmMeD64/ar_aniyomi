@@ -72,7 +72,9 @@ class OscarTv : Source() {
     private fun JsonObject.playCookie(): String? = try {
         str("deep_link")?.substringAfter("cookies=", "")?.takeIf { it.isNotBlank() }
             ?.substringBefore("&")?.let { java.net.URLDecoder.decode(it, "UTF-8") }
-    } catch (_: Exception) { null }
+    } catch (_: Exception) {
+        null
+    }
 
     private fun JsonObject.obj(key: String): JsonObject? = this[key] as? JsonObject
 
@@ -386,8 +388,11 @@ class OscarTv : Source() {
                 videoUrl = url,
                 videoTitle = "$name $q",
                 resolution = q.filter { it.isDigit() }.takeIf { it.isNotBlank() }?.toIntOrNull(),
-                headers = if (cookie.isNullOrBlank()) playbackHeaders
-                else Headers.headersOf("User-Agent", "TDMuaHLS99", "Cookie", cookie),
+                headers = if (cookie.isNullOrBlank()) {
+                    playbackHeaders
+                } else {
+                    Headers.headersOf("User-Agent", "TDMuaHLS99", "Cookie", cookie)
+                },
             )
         }
 
