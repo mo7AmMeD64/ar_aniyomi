@@ -68,6 +68,12 @@ class OscarTv : Source() {
 
     private fun JsonObject.int(key: String): Int? = str(key)?.toDoubleOrNull()?.toInt()
 
+    /** CDN guard redirects playback to a 1-min "تنوية" notice without this cookie (from deep_link) */
+    private fun JsonObject.playCookie(): String? = try {
+        str("deep_link")?.substringAfter("cookies=", "")?.takeIf { it.isNotBlank() }
+            ?.substringBefore("&")?.let { java.net.URLDecoder.decode(it, "UTF-8") }
+    } catch (_: Exception) { null }
+
     private fun JsonObject.obj(key: String): JsonObject? = this[key] as? JsonObject
 
     private fun JsonObject.arr(key: String): JsonArray? = this[key] as? JsonArray
@@ -375,11 +381,13 @@ class OscarTv : Source() {
             }
 
             if (!seen.add(url)) continue
+            val cookie = link.playCookie()
             videos += Video(
                 videoUrl = url,
                 videoTitle = "$name $q",
                 resolution = q.filter { it.isDigit() }.takeIf { it.isNotBlank() }?.toIntOrNull(),
-                headers = playbackHeaders,
+                headers = if (cookie.isNullOrBlank()) playbackHeaders
+                else Headers.headersOf("User-Agent", "TDMuaHLS99", "Cookie", cookie),
             )
         }
 
