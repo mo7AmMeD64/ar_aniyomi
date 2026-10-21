@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.animeextension.ar.anime4up
 
+import android.util.Base64
 import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
 import eu.kanade.tachiyomi.animesource.model.AnimesPage
@@ -10,8 +11,6 @@ import eu.kanade.tachiyomi.animesource.model.Video
 import extensions.utils.Source
 import extensions.utils.get
 import kotlinx.coroutines.CancellationException
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
@@ -20,10 +19,12 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import okhttp3.Headers
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import java.net.URLEncoder
+import kotlin.random.Random
 
 class Anime4Up : Source() {
 
@@ -44,7 +45,7 @@ class Anime4Up : Source() {
     private val userAgent =
         "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36"
 
-    private val streamRegex = Regex("""https?://[^\s"'<>\\]+?\.(?:m3u8|mp4)\b[^\s"'<>\\]*""")
+    private val streamRegex = Regex("""https?://[^\s"'<>\\]+?(?:\.(?:m3u8|mp4)\b|\bmaster\.txt\b)[^\s"'<>\\]*""")
 
     // =============================== Network ==============================
 
@@ -242,7 +243,12 @@ class Anime4Up : Source() {
 
     // =============================== Videos ===============================
 
-    private data class StreamLink(val url: String, val label: String, val quality: String? = null)
+    private data class StreamLink(
+        val url: String,
+        val label: String,
+        val quality: String? = null,
+        val referer: String? = null,
+    )
 
     override suspend fun getHosterList(episode: SEpisode): List<Hoster> {
         val doc = getDoc(episode.url) ?: return emptyList()
@@ -268,86 +274,252 @@ class Anime4Up : Source() {
 
     override suspend fun getVideoList(hoster: Hoster): List<Video> {
         val referer = hoster.memo["ep"]?.jsonPrimitive?.contentOrNull ?: baseUrl
-        val watchUrl = hoster.hosterUrl
 
-        val links = if (DIRECT_STREAM.containsMatchIn(watchUrl)) {
-            listOf(StreamLink(watchUrl, hoster.hosterName))
-        } else {
-            resolvePlayer(watchUrl, referer, hoster.hosterName)
-        }
-
-        return links.distinctBy { it.url }.map { link ->
-            Video(
-                videoUrl = link.url,
-                videoTitle = link.label,
-                resolution = link.quality?.filter { it.isDigit() }?.toIntOrNull(),
-                headers = headersFor(referer),
-            )
-        }
-    }
-
-    private suspend fun resolvePlayer(url: String, referer: String, serverName: String): List<StreamLink> {
-        val (html, finalUrl) = bodyOf(url, referer) ?: return emptyList()
-        val doc = Jsoup.parse(html, finalUrl)
-
-        val links = mutableListOf<StreamLink>()
-
-        // Laravel/Inertia player: the stream list sits behind an X-Inertia request.
-        val version = doc.selectFirst("script[data-page=app]")?.html()?.let { props ->
-            runCatching { json.parseToJsonElement(props).jsonObject["version"]?.jsonPrimitive?.contentOrNull }
-                .getOrNull()
-        }
-        if (!version.isNullOrBlank()) {
-            val inertia = bodyOf(
-                url,
-                referer,
-                mapOf(
-                    "X-Inertia" to "true",
-                    "X-Inertia-Partial-Component" to "files/mirror/video",
-                    "X-Inertia-Partial-Data" to "streams",
-                    "X-Inertia-Version" to version,
-                    "X-Requested-With" to "XMLHttpRequest",
-                ),
-            )?.first
-            if (inertia != null) links += inertiaStreams(inertia, serverName)
-        }
-
-        // Everything else embeds the manifest in the page source.
-        if (links.isEmpty()) {
-            links += streamRegex.findAll(html.replace("\\/", "/"))
-                .map { StreamLink(it.value, "$serverName · مباشر") }
-                .toList()
-        }
-
-        return links
-    }
-
-    private fun inertiaStreams(body: String, serverName: String): List<StreamLink> = try {
-        val qualities = json.parseToJsonElement(body).jsonObject["props"]
-            ?.jsonObject?.get("streams")
-            ?.jsonObject?.get("data")
-            ?.jsonArray ?: emptyList()
-
-        qualities.flatMap { quality ->
-            val obj: JsonObject = quality.jsonObject
-            val label = obj["label"]?.jsonPrimitive?.contentOrNull
-            val mirrors: JsonArray = obj["mirrors"]?.jsonArray ?: return@flatMap emptyList()
-
-            mirrors.mapNotNull { mirror ->
-                val link = mirror.jsonObject["link"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
-                StreamLink(
-                    url = if (link.startsWith("//")) "https:$link" else link,
-                    label = listOfNotNull(serverName, label).joinToString(" · "),
-                    quality = label,
+        return resolveLink(hoster.hosterUrl, referer, hoster.hosterName)
+            .distinctBy { it.url }
+            .map { link ->
+                Video(
+                    videoUrl = link.url,
+                    videoTitle = link.label,
+                    resolution = link.quality?.filter { it.isDigit() }?.toIntOrNull(),
+                    headers = headersFor(link.referer ?: referer),
                 )
             }
+    }
+
+    private suspend fun resolveLink(url: String, referer: String, serverName: String, depth: Int = 0): List<StreamLink> {
+        val link = if (url.startsWith("//")) "https:$url" else url
+        if (DIRECT_STREAM.containsMatchIn(link)) return listOf(StreamLink(link, "$serverName · مباشر"))
+        if (depth > 2) return emptyList()
+
+        val host = link.toHttpUrlOrNull()?.host.orEmpty()
+        return when {
+            link.contains("Anime4up-S") || host.contains("aa9o6k9") -> vnx(link, referer, serverName)
+            host.contains("share4max") || host.contains("megamax") -> share4max(link, referer, serverName, depth)
+            host.contains("voe.") -> voe(link, referer, serverName)
+            host.contains("vkvideo.") || host.contains("vk.com") -> vk(link, referer, serverName)
+            host.contains("playmogo") || host.contains("dood.") -> dood(link, referer, serverName)
+            else -> pageLinks(link, referer, serverName)
         }
-    } catch (_: Throwable) {
-        emptyList()
+    }
+
+    /** VnxPlayer: the site now redirects `4l.*` to the `/Anime4up-Sx/` player, which keeps the HLS URL in `streamUrl`. */
+    private suspend fun vnx(url: String, referer: String, serverName: String): List<StreamLink> {
+        val (html, finalUrl) = bodyOf(url, referer) ?: return emptyList()
+        val stream = VNX_STREAM.find(html)?.groupValues?.get(1) ?: return emptyList()
+
+        return listOf(StreamLink(stream, "$serverName · HLS", referer = finalUrl))
+    }
+
+    /** Laravel/Inertia player (`share4max`, `megamax`): the mirrors sit behind an X-Inertia request. */
+    private suspend fun share4max(url: String, referer: String, serverName: String, depth: Int): List<StreamLink> {
+        val qualities = inertiaQualities(url, referer) ?: return emptyList()
+
+        return qualities.flatMap { (quality, mirrors) ->
+            val label = listOfNotNull(serverName, quality).joinToString(" · ")
+            val supported = PREFERRED_MIRRORS
+                .mapNotNull { prefix -> mirrors.firstOrNull { it.contains(prefix) } }
+                .distinct()
+            val resolved = supported.firstNotNullOfOrNull { mirror ->
+                resolveLink(mirror, referer, label, depth + 1).takeIf { it.isNotEmpty() }
+            } ?: return@flatMap emptyList()
+
+            resolved.map { it.copy(quality = quality ?: it.quality) }
+        }
+    }
+
+    private suspend fun inertiaQualities(url: String, referer: String): List<Pair<String?, List<String>>>? {
+        val (html, finalUrl) = bodyOf(url, referer) ?: return null
+        val version = Jsoup.parse(html, finalUrl).selectFirst("script[data-page=app]")?.html()?.let {
+            runCatching { json.parseToJsonElement(it).jsonObject["version"]?.jsonPrimitive?.contentOrNull }.getOrNull()
+        } ?: return null
+
+        val body = bodyOf(
+            url,
+            referer,
+            mapOf(
+                "X-Inertia" to "true",
+                "X-Inertia-Partial-Component" to "files/mirror/video",
+                "X-Inertia-Partial-Data" to "streams",
+                "X-Inertia-Version" to version,
+                "X-Requested-With" to "XMLHttpRequest",
+            ),
+        )?.first ?: return null
+
+        val data = try {
+            json.parseToJsonElement(body).jsonObject["props"]?.jsonObject
+                ?.get("streams")?.jsonObject?.get("data")?.jsonArray ?: return null
+        } catch (_: Throwable) {
+            return null
+        }
+
+        return data.mapNotNull { quality ->
+            val obj = quality.jsonObject
+            val label = obj["label"]?.jsonPrimitive?.contentOrNull
+            val mirrors = obj["mirrors"]?.jsonArray?.mapNotNull { mirror ->
+                mirror.jsonObject["link"]?.jsonPrimitive?.contentOrNull?.let { if (it.startsWith("//")) "https:$it" else it }
+            } ?: emptyList()
+            label to mirrors
+        }
+    }
+
+    private suspend fun voe(url: String, referer: String, serverName: String): List<StreamLink> {
+        val first = bodyOf(url, referer)?.first ?: return emptyList()
+        val redirect = VO_REDIRECT.find(first)?.groupValues?.get(1)
+        val html = if (redirect != null) bodyOf(redirect, url)?.first ?: return emptyList() else first
+
+        val raw = Jsoup.parse(html).selectFirst("script[type=application/json]")?.data()?.trim() ?: return emptyList()
+        val encoded = raw.substringAfter("[\"", "").substringBeforeLast("\"]", "")
+        val decrypted = decryptVoe(encoded) ?: return emptyList()
+        val obj = runCatching { json.parseToJsonElement(decrypted).jsonObject }.getOrNull() ?: return emptyList()
+
+        return listOfNotNull(
+            obj["source"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+                ?.let { StreamLink(it, "$serverName · HLS", referer = "https://voe.sx/") },
+            obj["direct_access_url"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+                ?.let { StreamLink(it, "$serverName · MP4", referer = "https://voe.sx/") },
+        )
+    }
+
+    /** Port of the CloudStream Voe decoder (`decryptF7`). */
+    private fun decryptVoe(encoded: String): String? = runCatching {
+        var text = encoded.map { c ->
+            when {
+                c in 'A'..'Z' -> 'A' + (c - 'A' + 13) % 26
+                c in 'a'..'z' -> 'a' + (c - 'a' + 13) % 26
+                else -> c
+            }
+        }.joinToString("")
+        VO_PATTERNS.forEach { text = text.replace(it, "_") }
+        text = text.replace("_", "")
+
+        val shifted = String(base64(text), Charsets.ISO_8859_1)
+            .map { (it.code - 3).toChar() }
+            .joinToString("")
+            .reversed()
+
+        String(base64(shifted), Charsets.UTF_8)
+    }.getOrNull()
+
+    private fun base64(value: String): ByteArray {
+        val padded = value + "=".repeat((4 - value.length % 4) % 4)
+        return runCatching { Base64.decode(padded, Base64.DEFAULT) }
+            .getOrElse { Base64.decode(padded, Base64.URL_SAFE) }
+    }
+
+    private suspend fun vk(url: String, referer: String, serverName: String): List<StreamLink> {
+        val (html, _) = bodyOf(url.replace("vkvideo.ru", "vk.com"), referer) ?: return emptyList()
+
+        return VK_STREAM.findAll(html).mapNotNull { match ->
+            val key = match.groupValues[1]
+            val streamUrl = match.groupValues[2].replace("\\/", "/")
+            val quality = key.removePrefix("mp4_").takeIf { key != "hls" }
+            StreamLink(
+                url = streamUrl,
+                label = listOfNotNull(serverName, quality?.let { "${it}p" } ?: "HLS").joinToString(" · "),
+                quality = quality,
+                referer = "https://vk.com/",
+            )
+        }.toList()
+    }
+
+    private suspend fun dood(url: String, referer: String, serverName: String): List<StreamLink> {
+        val (html, finalUrl) = bodyOf(url, referer) ?: return emptyList()
+        val path = DOOD_PASS.find(html)?.value ?: return emptyList()
+        val origin = finalUrl.toHttpUrlOrNull()?.let { "${it.scheme}://${it.host}" } ?: return emptyList()
+
+        // The endpoint expects a jQuery XHR from the embed page, not a plain GET.
+        val xhrHeaders = mapOf(
+            "Accept" to "*/*",
+            "Origin" to origin,
+            "X-Requested-With" to "XMLHttpRequest",
+            "Sec-Fetch-Site" to "same-origin",
+            "Sec-Fetch-Mode" to "cors",
+            "Sec-Fetch-Dest" to "empty",
+        )
+        val tokenBody = bodyOf("$origin$path", finalUrl, xhrHeaders)?.first?.trim() ?: return emptyList()
+        if (tokenBody.isEmpty() || tokenBody == "RELOAD") return emptyList()
+
+        val token = path.substringAfterLast('/')
+        val suffix = (1..10).map { ALNUM[Random.nextInt(ALNUM.length)] }.joinToString("")
+        val streamUrl = "$tokenBody$suffix?token=$token&expiry=${System.currentTimeMillis()}"
+
+        return listOf(StreamLink(streamUrl, "$serverName · مباشر", referer = finalUrl))
+    }
+
+    /** mp4upload, ruby/morencius (Dean Edwards packed JS) and any player that embeds the manifest. */
+    private suspend fun pageLinks(url: String, referer: String, serverName: String): List<StreamLink> {
+        val (html, finalUrl) = bodyOf(url, referer) ?: return emptyList()
+        val text = unpackJs(html) ?: html
+        val pageReferer = if (finalUrl.contains("mp4upload")) "https://mp4upload.com/" else finalUrl
+
+        return streamRegex.findAll(text.replace("\\/", "/"))
+            .map { it.value }
+            .filterNot { link -> SKIP_HOSTS.any { it in link } }
+            .distinct()
+            .map { StreamLink(it, "$serverName · مباشر", referer = pageReferer) }
+            .toList()
+    }
+
+    private fun unpackJs(html: String): String? {
+        val match = PACKED_JS.find(html) ?: return null
+        val payload = unescapeJs(match.groupValues[1])
+        val radix = match.groupValues[2].toIntOrNull() ?: return null
+        val count = match.groupValues[3].toIntOrNull() ?: return null
+        val words = match.groupValues[4].split('|')
+
+        var result = payload
+        for (index in count - 1 downTo 0) {
+            val word = words.getOrNull(index)?.takeIf { it.isNotEmpty() } ?: continue
+            result = result.replace(Regex("\\b${Regex.escape(encodeBase(index, radix))}\\b")) { word }
+        }
+        return result
+    }
+
+    private fun unescapeJs(value: String): String = buildString {
+        var i = 0
+        while (i < value.length) {
+            val c = value[i]
+            if (c == '\\' && i + 1 < value.length) {
+                when (val next = value[i + 1]) {
+                    'n' -> append('\n')
+                    'r' -> append('\r')
+                    't' -> append('\t')
+                    'b' -> append('\b')
+                    'f' -> append('\u000C')
+                    else -> append(next)
+                }
+                i += 2
+            } else {
+                append(c)
+                i++
+            }
+        }
+    }
+
+    private fun encodeBase(value: Int, radix: Int): String {
+        if (value == 0) return "0"
+        var rest = value
+        val out = StringBuilder()
+        while (rest > 0) {
+            out.insert(0, BASE62[rest % radix])
+            rest /= radix
+        }
+        return out.toString()
     }
 
     private companion object {
         private const val ARABIC_DIGITS = "٠١٢٣٤٥٦٧٨٩"
-        private val DIRECT_STREAM = Regex("""\.(mp4|m3u8)\b""", RegexOption.IGNORE_CASE)
+        private const val ALNUM = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+        private const val BASE62 = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        private val DIRECT_STREAM = Regex("""\.(mp4|m3u8)\b|\bmaster\.txt\b""", RegexOption.IGNORE_CASE)
+        private val SKIP_HOSTS = listOf("test-videos.co.uk", "acek-cdn.com")
+        private val PREFERRED_MIRRORS = listOf("mp4upload.", "voe.sx", "lulustream.", "luluvdo.", "morencius.", "rubyvidhub.", "playmogo.")
+        private val VO_REDIRECT = Regex("""window\.location\.href\s*=\s*'([^']+)'""")
+        private val VO_PATTERNS = listOf("@$", "^^", "~@", "%?", "*~", "!!", "#&")
+        private val VNX_STREAM = Regex("""let streamUrl = "([^"]+)"""")
+        private val VK_STREAM = Regex(""""(mp4_\d{3,4}|hls)":"(https:\\/\\/[^"]+)"""")
+        private val DOOD_PASS = Regex("""/pass_md5/[^'"]+""")
+        private val PACKED_JS = Regex("""eval\(function\(p,a,c,k,e,[a-z]\)\{.*?\}\('(.*?)',(\d+),(\d+),'(.*?)'\.split\('\|'\)""", RegexOption.DOT_MATCHES_ALL)
     }
 }
