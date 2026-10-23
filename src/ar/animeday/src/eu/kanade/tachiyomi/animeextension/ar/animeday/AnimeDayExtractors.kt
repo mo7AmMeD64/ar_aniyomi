@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.animeextension.ar.animeday
 
 import android.net.Uri
+import android.util.Base64
 import eu.kanade.tachiyomi.animesource.model.Video
 import extensions.utils.get
 import extensions.utils.post
@@ -59,7 +60,13 @@ internal object AnimeDayExtractors {
     private val UQLOAD_CODE_RE = Regex("""/(?:e|d|embed)/([A-Za-z0-9]+)""")
     private val DOOD_PASS_RE = Regex("""/pass_md5/[^'"]+""")
     private val VK_STREAM_RE = Regex(""""(mp4_\d{3,4}|hls)":"(https:\\/\\/[^"]+)"""")
+    private val MIXDROP_WURL_RE = Regex("""MDCore\.wurl\s*=\s*["']([^"']+)["']""")
+    private val VO_REDIRECT_RE = Regex("""window\.location\.href\s*=\s*'([^']+)'""")
+    private val VO_JSON_RE = Regex("""(?is)<script[^>]+type=["']application/json["'][^>]*>(.*?)</script>""")
+    private val INERTIA_PAGE_RE = Regex("""(?is)<script[^>]*data-page=["']app["'][^>]*>(.*?)</script>""")
+    private val RESOLUTION_RE = Regex("""(\d{3,4})p""")
     private val SKIP_HOSTS = listOf("test-videos.co.uk", "acek-cdn.com")
+    private val VOE_PATTERNS = listOf("@$", "^^", "~@", "%?", "*~", "!!", "#&")
 
     private val FHD_ALPHABET = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+/"
     private const val FHD_KEY1 = "V2@%YSU2B]G~"
@@ -102,12 +109,25 @@ internal object AnimeDayExtractors {
         val host = url.toHttpUrlOrNull()?.host.orEmpty()
 
         if (isGooglePhotosLink(url)) return googlePhotos(client, url, label, quality)
-        if (DIRECT_RE.containsMatchIn(url)) return listOf(video(url, label, quality, referer))
+        // These hosts put a .mp4-looking path on an embed page, not a media file.
+        if (DIRECT_RE.containsMatchIn(url) && !host.contains("bysesukior") && !host.contains("byseraguci")) {
+            return listOf(video(url, label, quality, referer))
+        }
 
         return when {
-            host.contains("uqload") -> uqload(client, url, referer, label)
+            host.contains("uqload") || host.contains("rubyvidhub") || host.contains("savefiles") ->
+                uqload(client, url, referer, label)
 
-            host.contains("dood") || host.contains("playmogo") -> dood(client, url, referer, label)
+            host.contains("dood") || host.contains("playmogo") ||
+                host.contains("ds2play") || host.contains("goodstream") ->
+                dood(client, url, referer, label)
+
+            host.contains("mixdrop") || host.contains("mxdrop") -> mixdrop(client, url, referer, label)
+
+            host.contains("voe.") -> voe(client, url, referer, label)
+
+            host.contains("megamax") || host.contains("share4max") ->
+                share4max(client, url, referer, label, depth)
 
             host.contains("vidspeed") -> packer(client, url, referer, label)
 
@@ -115,6 +135,15 @@ internal object AnimeDayExtractors {
 
             host.contains("vkvideo") || host == "vk.com" || host.endsWith(".vk.com") ->
                 vk(client, url, referer, label)
+
+            host.contains("test-stream") || host.contains("developer-pro.workers.dev") ->
+                jsonQualities(client, url, referer, label)
+
+            host.contains("lulustream") || host.contains("luluvdo") ||
+                host.contains("1vid") || host.contains("hgplaycdn") ||
+                host.contains("vidmoly") || host.contains("ok.ru") ||
+                host.contains("bysesukior") || host.contains("byseraguci") ->
+                pageStreams(client, url, referer, label, depth)
 
             else -> unknown(client, url, referer, label, quality, depth)
         }
@@ -216,6 +245,7 @@ internal object AnimeDayExtractors {
         depth: Int,
     ): List<Video> {
         val page = fetch(client, url, pageHeaders(referer)) ?: return emptyList()
+        jsonQualitiesFrom(page.body, label, page.url)?.let { if (it.isNotEmpty()) return it }
         val streams = streamsFrom(page.body, label, page.url)
         if (streams.isNotEmpty()) return streams
 
@@ -223,10 +253,39 @@ internal object AnimeDayExtractors {
         return resolveAt(client, absolute(iframe, page.url), page.url, label, null, depth + 1)
     }
 
+    /** Some hosters return a small JSON manifest instead of an embed page. */
+    private suspend fun jsonQualities(
+        client: OkHttpClient,
+        url: String,
+        referer: String,
+        label: String,
+    ): List<Video> {
+        val page = fetch(client, url, pageHeaders(referer)) ?: return emptyList()
+        return jsonQualitiesFrom(page.body, label, page.url).orEmpty()
+    }
+
+    private fun jsonQualitiesFrom(body: String, label: String, pageUrl: String): List<Video>? {
+        val json = runCatching { JSONObject(body.trim()) }.getOrNull() ?: return null
+        val qualities = json.optJSONArray("availableQualities") ?: return null
+        val found = mutableListOf<Video>()
+        for (i in 0 until qualities.length()) {
+            val item = qualities.optJSONObject(i) ?: continue
+            val streamUrl = item.optString("url").trim()
+            if (streamUrl.isEmpty()) continue
+            val qualityLabel = item.optString("quality").ifBlank { item.optString("label") }.ifBlank { "تلقائي" }
+            val resolution = RESOLUTION_RE.find(qualityLabel)?.groupValues?.get(1)?.toIntOrNull()
+            found += video(streamUrl, "$label · $qualityLabel", resolution, pageUrl)
+        }
+        return found
+    }
+
     private fun streamsFrom(html: String, label: String, referer: String): List<Video> {
         val text = (html + "\n" + (unPacker(html) ?: ""))
             .replace("\\/", "/")
             .replace("\\u0026", "&")
+            .replace("&quot;", "\"")
+            .replace("&amp;", "&")
+            .replace("&#39;", "'")
         return STREAM_RE.findAll(text)
             .map { it.value }
             .filterNot { link -> SKIP_HOSTS.any { it in link } }
@@ -282,7 +341,8 @@ internal object AnimeDayExtractors {
     ): List<Video> {
         val page = fetch(client, url, pageHeaders(referer)) ?: return emptyList()
         val code = UQLOAD_CODE_RE.find(page.url)?.groupValues?.get(1)
-            ?: page.url.substringAfterLast("/").substringBefore("?").takeIf { it.isNotBlank() }
+            ?: page.url.substringAfterLast("/").substringBefore("?")
+                .substringBefore(".").substringAfter("-").takeIf { it.isNotBlank() }
             ?: return emptyList()
         val origin = page.url.toHttpUrlOrNull()?.let { "${it.scheme}://${it.host}" } ?: return emptyList()
 
@@ -331,6 +391,138 @@ internal object AnimeDayExtractors {
         val suffix = (1..10).map { ALNUM[Random.nextInt(ALNUM.length)] }.joinToString("")
         val streamUrl = "$tokenBody$suffix?token=$token&expiry=${System.currentTimeMillis()}"
         return listOf(video(streamUrl, "$label · مباشر", null, page.url))
+    }
+
+    // ------------------------------------------------------------------ MixDrop / Voe
+
+    private suspend fun mixdrop(
+        client: OkHttpClient,
+        url: String,
+        referer: String,
+        label: String,
+    ): List<Video> {
+        val page = fetch(client, url, pageHeaders(referer)) ?: return emptyList()
+        val text = (unPacker(page.body) ?: page.body).replace("\\/", "/")
+        val raw = MIXDROP_WURL_RE.find(text)?.groupValues?.get(1) ?: return emptyList()
+        val streamUrl = absolute(raw.trim(), page.url)
+        return if (DIRECT_RE.containsMatchIn(streamUrl)) {
+            listOf(video(streamUrl, "$label · MP4", null, page.url))
+        } else {
+            emptyList()
+        }
+    }
+
+    private suspend fun voe(
+        client: OkHttpClient,
+        url: String,
+        referer: String,
+        label: String,
+    ): List<Video> {
+        val first = fetch(client, url, pageHeaders(referer)) ?: return emptyList()
+        val redirect = VO_REDIRECT_RE.find(first.body)?.groupValues?.get(1)
+        val page = if (redirect != null) {
+            fetch(client, absolute(redirect, first.url), pageHeaders(first.url)) ?: return emptyList()
+        } else {
+            first
+        }
+
+        val raw = VO_JSON_RE.find(page.body)?.groupValues?.get(1)?.trim() ?: return emptyList()
+        val encoded = raw.substringAfter("[\"", raw).substringBeforeLast("\"]", raw)
+        val decrypted = decryptVoe(encoded) ?: return emptyList()
+        val json = runCatching { JSONObject(decrypted) }.getOrNull() ?: return emptyList()
+        val voeReferer = "https://voe.sx/"
+
+        return listOfNotNull(
+            json.optString("source").takeIf { it.isNotBlank() }
+                ?.let { video(it, "$label · HLS", null, voeReferer) },
+            json.optString("direct_access_url").takeIf { it.isNotBlank() }
+                ?.let { video(it, "$label · MP4", null, voeReferer) },
+        )
+    }
+
+    private fun decryptVoe(encoded: String): String? = runCatching {
+        var text = encoded.map { c ->
+            when {
+                c in 'A'..'Z' -> 'A' + (c - 'A' + 13) % 26
+                c in 'a'..'z' -> 'a' + (c - 'a' + 13) % 26
+                else -> c
+            }
+        }.joinToString("")
+        VOE_PATTERNS.forEach { text = text.replace(it, "_") }
+        text = text.replace("_", "")
+
+        val shifted = String(voeBase64(text), Charsets.ISO_8859_1)
+            .map { (it.code - 3).toChar() }
+            .joinToString("")
+            .reversed()
+
+        String(voeBase64(shifted), Charsets.UTF_8)
+    }.getOrNull()
+
+    private fun voeBase64(value: String): ByteArray {
+        val padded = value + "=".repeat((4 - value.length % 4) % 4)
+        return runCatching { Base64.decode(padded, Base64.DEFAULT) }
+            .getOrElse { Base64.decode(padded, Base64.URL_SAFE) }
+    }
+
+    // ------------------------------------------------------------------ Megamax / Share4Max
+
+    private val MIRROR_ORDER = listOf(
+        "voe", "lulustream", "mixdrop", "doodstream", "dood", "ds2play",
+        "savefiles", "streamtape", "mp4upload", "rubyvidhub", "playmogo",
+    )
+
+    private fun mirrorRank(driver: String): Int = MIRROR_ORDER.indexOf(driver).let { if (it < 0) MIRROR_ORDER.size else it }
+
+    private suspend fun share4max(
+        client: OkHttpClient,
+        url: String,
+        referer: String,
+        label: String,
+        depth: Int,
+    ): List<Video> {
+        val page = fetch(client, url, pageHeaders(referer)) ?: return emptyList()
+        val data = INERTIA_PAGE_RE.find(page.body)?.groupValues?.get(1) ?: return emptyList()
+        val pageJson = runCatching { JSONObject(data) }.getOrNull() ?: return emptyList()
+        val version = pageJson.optString("version")
+        val requestHeaders = pageHeaders(page.url).newBuilder()
+            .add("X-Inertia", "true")
+            .add("X-Inertia-Partial-Component", "files/mirror/video")
+            .add("X-Inertia-Partial-Data", "streams")
+            .add("X-Inertia-Version", version)
+            .add("X-Requested-With", "XMLHttpRequest")
+            .set("Accept", "application/json, text/plain, */*")
+            .build()
+        val body = fetchText(client, page.url, requestHeaders) ?: return emptyList()
+        val streams = runCatching {
+            JSONObject(body).optJSONObject("props")
+                ?.optJSONObject("streams")
+                ?.optJSONArray("data")
+        }.getOrNull() ?: return emptyList()
+
+        val found = mutableListOf<Video>()
+        for (i in 0 until streams.length()) {
+            val item = streams.optJSONObject(i) ?: continue
+            val qualityLabel = item.optString("label").ifBlank { item.optString("resolution") }
+            val resolution = item.optString("resolution").substringAfter("x", "").toIntOrNull()
+                ?: RESOLUTION_RE.find(qualityLabel)?.groupValues?.get(1)?.toIntOrNull()
+            val mirrors = item.optJSONArray("mirrors") ?: continue
+            val ordered = (0 until mirrors.length()).mapNotNull { index ->
+                val mirror = mirrors.optJSONObject(index) ?: return@mapNotNull null
+                val link = mirror.optString("link").trim()
+                if (link.isEmpty()) null else mirror.optString("driver") to absolute(link, page.url)
+            }.sortedBy { mirrorRank(it.first) }.take(6)
+            val sourceLabel = if (qualityLabel.isBlank()) label else "$label · $qualityLabel"
+
+            for ((_, mirrorUrl) in ordered) {
+                val resolved = resolveAt(client, mirrorUrl, page.url, sourceLabel, resolution, depth + 1)
+                if (resolved.isNotEmpty()) {
+                    found += resolved
+                    break
+                }
+            }
+        }
+        return found
     }
 
     // ------------------------------------------------------------------ VK video
