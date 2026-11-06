@@ -115,14 +115,22 @@ class Anime3rb : Source() {
 
         val home = getDocument(baseUrl) ?: return AnimesPage(emptyList(), false)
 
-        val csrf = home.selectFirst("script[src*=livewire.min.js]")?.attr("data-csrf")
+        // Livewire 3.6+: the CSRF token and the (randomised) update endpoint are attributes of the same <script> tag
+        val livewireScript = home.selectFirst("script[data-csrf]")
             ?: return AnimesPage(emptyList(), false)
+        val csrf = livewireScript.attr("data-csrf")
+        val updateUrl = livewireScript.attr("data-update-uri")
+            .takeIf { it.isNotBlank() }
+            ?.let { absolute(it) }
+            ?: "$baseUrl/livewire/update"
         val snapshot = home.selectFirst("form[wire:id]")?.attr("wire:snapshot")
             ?: return AnimesPage(emptyList(), false)
 
         val headers = Headers.headersOf(
             "User-Agent", userAgent,
             "Accept", "*/*",
+            "X-Livewire", "1",
+            "Sec-Fetch-Site", "same-origin",
             "Content-Type", "application/json",
             "Origin", baseUrl,
             "Referer", "$baseUrl/",
@@ -139,7 +147,7 @@ class Anime3rb : Source() {
                             put(
                                 "updates",
                                 buildJsonObject {
-                                    put("query", query)
+                                    put("query", q)
                                 },
                             )
                             put("calls", buildJsonArray { })
@@ -150,7 +158,7 @@ class Anime3rb : Source() {
         }
 
         val items = try {
-            val response = client.post("$baseUrl/livewire/update", headers, payload.toString().toJsonBody())
+            val response = client.post(updateUrl, headers, payload.toString().toJsonBody())
             val html = response.parseAs<JsonObject>()["components"]!!.jsonArray[0]
                 .jsonObject["effects"]!!.jsonObject["html"]!!.jsonPrimitive.content
             Jsoup.parse(html).select("a.simple-title-card").mapNotNull { item ->
